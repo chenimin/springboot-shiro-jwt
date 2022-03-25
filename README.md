@@ -1,8 +1,8 @@
-# Spring-Vue-Demo
+# Spring-shiro-jwt-Demo
 
 ## 前言
 
-SpringBoot整合Vue的一个Demo，同时后端整合了Shiro+Jwt+Redis的安全框架。
+SpringBoot的一个前后端分离的Demo，同时后端整合了Shiro+Jwt+Redis的安全框架。
 
 通过一个demo进一步了解了前后端分离的架构思想以及安全框架shiro的运行机制。
 
@@ -18,789 +18,136 @@ SpringBoot整合Vue的一个Demo，同时后端整合了Shiro+Jwt+Redis的安全
 ### 新建数据库
 
 ```sql
-CREATE TABLE `t_user` (
-  `userId` bigint(20) NOT NULL AUTO_INCREMENT,
-  `userName` varchar(255) NOT NULL,
-  `userPassword` varchar(255) NOT NULL,
-  `userEmail` varchar(255) NOT NULL,
-  `userRole` varchar(255) NOT NULL,
-  `userPermission` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`userId`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8;
-```
-
-包括用户ID，用户名，用户密码，用户邮箱，用户角色，用户许可。
-
-加入几个对象：
-
-```
-1,student,student,student@qq.com,student,view
-2,teacher,teacher,teacher@qq.com,teacher,view
-3,admin1,admin1,admin1@qq.com,admin,view
-4,admin2,admin2,admin2@qq.com,admin,"view,edit"
-```
-
-包括学生，教师，只可以查看的管理员，可以查看和编辑的管理员。
-
-### 新建springboot项目并引入依赖
-
-```java
-<!-- 自定义配置字段时通过build可以让springboot自动配置meta数据 -->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-configuration-processor</artifactId>
-</dependency>
-
-<!-- redis + shiro-->
-<dependency>
-    <groupId>org.crazycake</groupId>
-    <artifactId>shiro-redis-spring-boot-starter</artifactId>
-    <version>3.2.1</version>
-</dependency>
-<!-- hutool工具类-->
-<dependency>
-    <groupId>cn.hutool</groupId>
-    <artifactId>hutool-all</artifactId>
-    <version>5.3.3</version>
-</dependency>
-<!-- jwt -->
-<dependency>
-    <groupId>io.jsonwebtoken</groupId>
-    <artifactId>jjwt</artifactId>
-    <version>0.9.1</version>
-</dependency>
-<!--用于@Notblank等注解-->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-validation</artifactId>
-</dependency>
-
-<!--springboot-web开发-->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
-</dependency>
-<!--mybatis-plus-->
-<dependency>
-    <groupId>com.baomidou</groupId>
-    <artifactId>mybatis-plus-boot-starter</artifactId>
-    <version>3.5.1</version>
-</dependency>
-<!--devtool工具-->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-devtools</artifactId>
-    <scope>runtime</scope>
-    <optional>true</optional>
-</dependency>
-<!--mysql连接-->
-<dependency>
-    <groupId>mysql</groupId>
-    <artifactId>mysql-connector-java</artifactId>
-    <scope>runtime</scope>
-</dependency>
-<!--@Data等注解使用-->
-<dependency>
-    <groupId>org.projectlombok</groupId>
-    <artifactId>lombok</artifactId>
-    <optional>true</optional>
-</dependency>
-<!--springboot-test使用-->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-test</artifactId>
-    <scope>test</scope>
-    <exclusions>
-        <exclusion>
-            <groupId>org.junit.vintage</groupId>
-            <artifactId>junit-vintage-engine</artifactId>
-        </exclusion>
-    </exclusions>
-</dependency>
-```
-
-### 编辑application.yaml
-
-```yaml
-spring:
-  application:
-    name: springboot-vue-demo
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/test?serverTimezone=UTC
-    username: root
-    password: 123456
-  redis:
-    port: 6379
-    jedis:
-      pool:
-        max-active: 1000
-        max-wait: -1
-        min-idle: 5
-        max-idle: 10
-    timeout: 6000
-server:
-  port: 8080
-
-mybatis-plus:
-  configuration:
-    map-underscore-to-camel-case: false
-```
-
-### 创建实体类
-
-```java
-/**
- * @version 1.0
- * @description User实体类
- */
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-@ToString
-@TableName("t_user")
-public class User implements Serializable {
-    @TableId(value = "userId", type = IdType.AUTO)
-    private Long userId;
-    @NotBlank(message = "用户名不能为空")
-    private String userName;
-    @NotBlank(message = "密码不能为空")
-    private String userPassword;
-    @NotBlank(message = "邮箱不能为空")
-    @Email(message = "邮箱格式错误")
-    private String userEmail;
-    private String userRole;
-    private String userPermission;
-}
-```
-
-### 创建实体类对应mapper层和service层
-
-```java
-public interface UserService extends IService<User> {}
-```
-
-```java
-@Service
-public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
-}
-```
-
-```java
-public interface UserMapper extends BaseMapper<User> {
-}
-```
-
-### 创建Mybatis配置类
-
-添加mapper扫描路径以及开启事务
-
-```java
-/**
- * @version 1.0
- * @description MyBatisPlus配置
- */
-@Configuration
-@EnableTransactionManagement
-@MapperScan("com.aoizzzz.communitymarket.mapper")
-public class MbpConfig {
-    @Bean
-    public MybatisPlusInterceptor mybatisPlusInterceptor() {
-        MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
-        return interceptor;
-    }
-
-    public OptimisticLockerInnerInterceptor optimisticLockerInnerInterceptor() {
-        return new OptimisticLockerInnerInterceptor();
-    }
-}
-```
-
-### 创建Jwt工具类
-
-在这之前在application.yaml中配置自己的Jwt密钥和过期时间：
-
-```yaml
-auth:
-  jwt:
-    secret: dasfjlsajdlkeeawrljawr213jfsad
-    expire: 43200
-```
-
-注意expire以秒为单位，new Date() 时以毫秒为单位。
-
-工具类作用如下：
-
-- 生成token
-- 根据用户的token获取claims用于校验token
-- 校验token是否过期
-
-```java
-/**
- * @version 1.0
- * @description Jwt工具包
- */
-@Data
-@Component
-@Slf4j
-@ConfigurationProperties(prefix = "auth.jwt")
-public class JwtUtils {
-    private String secret;
-    private int expire;
-
-    /**
-     * @description: 生成token
-     * @author Jiang Zhihang
-     * @date 2022/2/4 22:50
-     */
-    public String createToken(String email) {
-        Date nowDate = new Date();
-        Date expireDate = new Date(nowDate.getTime() + expire * 1000L); // 乘上1000ms
-        return Jwts.builder()
-                .setHeaderParam("typ", "JWT")
-                .setSubject(email)
-                .setIssuedAt(nowDate)
-                .setExpiration(expireDate)
-                .signWith(SignatureAlgorithm.HS256, secret)
-                .compact();
-    }
-
-    /**
-     * @description: 根据用户的token获取claims用于校验token
-     * @author Jiang Zhihang
-     * @date 2022/2/4 22:53
-     */
-    public Claims getClaimsByToken(String token) {
-        try {
-            return Jwts.parser()
-                    .setSigningKey(secret)
-                    .parseClaimsJws(token)
-                    .getBody();
-        } catch (Exception e) {
-            log.error("token error: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * @description: 校验token是否过期
-     * @author Jiang Zhihang
-     * @date 2022/2/4 23:09
-     */
-    public boolean isTokenExpired(Date expireDate) {
-        return expireDate.before(new Date());
-    }
-}
-```
-
-### 创建JwtToken类
-
-JwtToken继承于Shiro包下的AuthenticationToken，用于Shiro认证。
-
-```java
-/**
- * @version 1.0
- * @description token类
- * @Author Jiang Zhihang
- * @Date 2022/2/4 22:57
- */
-public class JwtToken implements AuthenticationToken {
-    private final String token;
-
-    public JwtToken(String token) {
-        this.token = token;
-    }
-
-    @Override
-    public Object getPrincipal() {
-        return token;
-    }
-
-    @Override
-    public Object getCredentials() {
-        return token;
-    }
-}
-```
-
-### 创建AccountProfile类
-
-用于Shiro认证存储的对象。
-
-```java
-/**
- * @version 1.0
- * @description
- * @Author Jiang Zhihang
- * @Date 2022/2/5 21:25
- */
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-@ToString
-public class AccountProfile implements Serializable {
-    private String email; // 用户登录名，也可为手机号等
-    
-    // 可选项
-    private String phone;
-    private String name;
-}
-```
-
-这里提前提醒一下必须在后续注入RedisManager时指定AccountProfile类用于Redis缓存的key字段！
-
-### 创建AccountRealm类
-
-用于向数据库查询验证账户以及权限校验信息的注册。
-
-```java
-/**
- * @version 1.0
- * @description 用于向数据库查询验证账户以及权限校验信息的注册
- * @Author Jiang Zhihang
- * @Date 2022/2/4 23:21
- */
-@Component
-public class AccountRealm extends AuthorizingRealm {
-    final JwtUtils jwtUtils;
-    final UserService userService;
-
-    @Autowired
-    public AccountRealm(JwtUtils jwtUtils, UserService userService) {
-        this.jwtUtils = jwtUtils;
-        this.userService = userService;
-    }
-
-    /**
-     * @description: 必须添加，设置支持于自己指定的JwtToken
-     * @author Jiang Zhihang
-     * @date 2022/2/5 0:31
-     */
-    @Override
-    public boolean supports(AuthenticationToken token) {
-        return token instanceof JwtToken;
-    }
-
-    /**
-     * @description: 认证校验
-     * @author Jiang Zhihang
-     * @date 2022/2/4 23:34
-     */
-    @Override
-    protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken authenticationToken) throws AuthenticationException {
-        JwtToken jwtToken = (JwtToken) authenticationToken;
-        Claims claims = jwtUtils.getClaimsByToken((String) jwtToken.getPrincipal());
-
-        String email = claims.getSubject();
-        User user = userService.getOne(new QueryWrapper<User>().eq("userEmail", email));
-        if (user == null) {
-            throw new UnknownAccountException("用户不存在");
-        }
-        // 所有对象统一为AccountProfile内置属性rid作为统一redis缓存id
-        AccountProfile profile = new AccountProfile();
-        profile.setEmail(user.getUserEmail());
-        return new SimpleAuthenticationInfo(profile, jwtToken.getCredentials(), this.getClass().getName());
-    }
-
-    /**
-     * @description: 权限校验
-     * @author Jiang Zhihang
-     * @date 2022/2/5 17:17
-     */
-    @Override
-    protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principalCollection) {
-        Object principal = principalCollection.getPrimaryPrincipal();
-        // 这里从redis获取的信息不能被反序列化导致无法直接强转为AccountProfile
-        AccountProfile profile = JSONUtil.parse(principal).toBean(AccountProfile.class);
-        User user = userService.getOne(new QueryWrapper<User>().eq("userEmail", profile.getEmail()));
-        SimpleAuthorizationInfo simpleAuthorizationInfo = new SimpleAuthorizationInfo();
-        simpleAuthorizationInfo.addRole(user.getUserRole());
-        java.util.List<String> permissions = Arrays.asList(user.getUserPermission().split(","));
-        simpleAuthorizationInfo.addStringPermissions(permissions);
-        return simpleAuthorizationInfo;
-    }
-}
-```
-
-### 创建Jwt过滤器
-
-过滤流程：
-
-1. 首先经过prehandle，用于支持跨域请求。
-
-2. 接着经过onAccessDenied，拦截请求Header中是否有auth字段并进行对应操作。
-
-3. 如果没有token，则直接通过，后续通过@RequiresAuthentication等进行拦截。
-
-4. 如果有token，则校验token失效，如果失效则通过失败执行onLoginFailure。
-
-5. 如果token未失效，则通过Shiro进行登录认证以及可选的权限校验。
-
-```java
-/**
- * @version 1.0
- * @description jwt过滤器
- * @Author Jiang Zhihang
- * @Date 2022/2/4 22:59
- */
-@Component
-public class JwtFilter extends AuthenticatingFilter {
-    private JwtUtils jwtUtils;
-
-    @Autowired
-    public void setJwtUtils(JwtUtils jwtUtils) {
-        this.jwtUtils = jwtUtils;
-    }
-
-    /**
-     * @description: 拦截用户请求
-     * @author Jiang Zhihang
-     * @date 2022/2/5 0:28
-     */
-    @Override
-    protected boolean onAccessDenied(ServletRequest servletRequest, ServletResponse servletResponse) throws Exception {
-        HttpServletRequest request = (HttpServletRequest) servletRequest;
-        String token = request.getHeader("auth");
-        // 如果没有token，则直接通过，后续通过@RequiresAuthentication等进行拦截
-        if (StringUtils.isEmpty(token)) {
-            return true;
-        } else { // 如果有token，则进行校验
-            // 校验token
-            Claims claims = jwtUtils.getClaimsByToken(token);
-            if (claims == null || jwtUtils.isTokenExpired(claims.getExpiration())) {
-                throw new ExpiredCredentialsException("token已经失效，请重新登录");
-            }
-            // 继续继续校验，校验成功则登录成功
-            return executeLogin(servletRequest, servletResponse);
-        }
-    }
-
-    /**
-     * @description: 把请求头中的token生成到JwtToken类中
-     * @author Jiang Zhihang
-     * @date 2022/2/5 0:28
-     */
-    @Override
-    protected AuthenticationToken createToken(ServletRequest servletRequest, ServletResponse servletResponse) throws Exception {
-        HttpServletRequest request = (HttpServletRequest) servletRequest;
-        String token = request.getHeader("auth");
-        if (StringUtils.isEmpty(token)) {
-            return null;
-        }
-        return new JwtToken(token);
-    }
-
-    /**
-     * @description: 登录失败返回错误消息
-     * @author Jiang Zhihang
-     * @date 2022/2/5 17:25
-     */
-    @Override
-    protected boolean onLoginFailure(AuthenticationToken token, AuthenticationException e, ServletRequest request, ServletResponse response) {
-        HttpServletResponse httpServletResponse = (HttpServletResponse) response;
-        Throwable throwable = e.getCause() == null ? e : e.getCause();
-        RestfulResponse restfulResponse = RestfulResponse.fail(400, throwable.getMessage());
-        String JsonStr = JSONUtil.toJsonStr(restfulResponse);
-        try {
-            httpServletResponse.getWriter().print(JsonStr);
-        } catch (IOException ignored){
-
-        }
-        return false;
-    }
-
-    /**
-     * @description: 用于支持跨域
-     * @author Jiang Zhihang
-     * @date 2022/2/5 0:30
-     */
-    @Override
-    protected boolean preHandle(ServletRequest request, ServletResponse response) throws Exception {
-
-        HttpServletRequest httpServletRequest = (HttpServletRequest) request;
-        HttpServletResponse httpServletResponse = (HttpServletResponse) response;
-        httpServletResponse.setHeader("Access-Control-Allow-Origin", httpServletRequest.getHeader("Origin"));
-        /*
-        假如：浏览器地址栏的地址是：http://localhost:4200/#/pages/dashadmin
-        异步请求后端地址：http://localhost:8080/secure
-        请求头：
-        ...
-        Host:localhost:8080
-        Origin:http://localhost:4200
-        Referer:http://localhost:4200/
-        ...
-        从上面的请求头中可以看到request.getHeader("Origin")的值就是就是http://localhost:4200
-        request.getHeader("Origin")经常用法就是用来解决浏览器跨域问题
-        response.setHeader("Access-Control-Allow-Origin", request.getHeader("Origin"));
-        指的是只允许http://localhost:4200跨域访问后端服务器。
-        */
-        httpServletResponse.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS,PUT,DELETE");
-
-        /*
-        响应首部 Access-Control-Allow-Headers 用于 preflight request （预检请求）中，
-        列出了将会在正式请求的 Access-Control-Expose-Headers 字段中出现的首部信息。修改为请求首部
-         */
-        httpServletResponse.setHeader("Access-Control-Allow-Headers", httpServletRequest.getHeader("Access-Control-Request-Headers"));
-
-        // 跨域时会首先发送一个OPTIONS请求，这里我们给OPTIONS请求直接返回正常状态
-        /*
-        options 请求就是预检请求，可用于检测服务器允许的http 方法。
-        当发起跨域请求时，由于安全原因，触发一定条件时浏览器会在正式请求之前自动先发起OPTIONS 请求，即CORS 预检请求，
-        服务器若接受该跨域请求，浏览器才继续发起正式请求。
-         */
-        if (httpServletRequest.getMethod().equals(RequestMethod.OPTIONS.name())) {
-            httpServletResponse.setStatus(org.springframework.http.HttpStatus.OK.value());
-            return false;
-        }
-
-        return super.preHandle(request, response);
-    }
-}
-```
-
-### 创建Shiro配置类
-
-这里通过@Bean，外部可以import我们自己配置的东西。
-
-1. 配置SessionManager
-
-注入RedisSessionDAO，session管理员集成redis。
-
-2. 配置DefaultWebSecurityManager
-
-注入AccountRealm， SessionManager，RedisCacheManager。
-
-其中必须记得要设置主键名称，shiro-redis 插件用过这个缓存用户信息：
-
-```java
-redisCacheManager.setPrincipalIdFieldName("email");
-```
-
-3. 配置ShiroFilterChainDefinition
-
-在ShiroFilterChainDefinition中，我们不再通过编码形式拦截Controller访问路径，
-
-而是所有的路由都需要经过JwtFilter这个过滤器，然后判断请求头中是否含有jwt的信息，
-
-有就登录，没有就跳过。跳过之后，有Controller中的shiro注解进行再次拦截，比如@RequiresAuthentication，这样控制权限访问。
-
-4. 配置ShiroFilterFactoryBean
-
-shiro工厂bean，设置安全管理员和jwt过滤器。
-
-```java
-/**
- * @version 1.0
- * @description Shiro安全框架配置
- * @Author Jiang Zhihang
- * @Date 2022/2/4 22:56
- */
-@Configuration
-public class ShiroConfig {
-    final JwtFilter jwtFilter;
-    private int expire;
-
-    @Autowired
-    public ShiroConfig(JwtFilter jwtFilter) {
-        this.jwtFilter = jwtFilter;
-    }
-
-    /**
-     * @description: session管理员集成redis
-     * @author Jiang Zhihang
-     * @date 2022/2/4 23:40
-     */
-    @Bean
-    public SessionManager sessionManager(RedisSessionDAO redisSessionDAO) {
-        DefaultWebSessionManager sessionManager = new DefaultWebSessionManager();
-        sessionManager.setSessionDAO(redisSessionDAO);
-        return sessionManager;
-    }
-
-    /**
-     * @description: 设置安全管理员
-     * @author Jiang Zhihang
-     * @date 2022/2/4 23:42
-     */
-    @Bean
-    public DefaultWebSecurityManager securityManager(AccountRealm accountRealm,
-                                                     SessionManager sessionManager,
-                                                     RedisCacheManager redisCacheManager) {
-        DefaultWebSecurityManager securityManager = new DefaultWebSecurityManager(accountRealm);
-        securityManager.setSessionManager(sessionManager);
-        // 必须要设置主键名称，shiro-redis 插件用过这个缓存用户信息
-        redisCacheManager.setPrincipalIdFieldName("email");
-        securityManager.setCacheManager(redisCacheManager);
-        return securityManager;
-    }
-
-    /**
-     * @description:
-     在ShiroFilterChainDefinition中，我们不再通过编码形式拦截Controller访问路径，
-     而是所有的路由都需要经过JwtFilter这个过滤器，然后判断请求头中是否含有jwt的信息，
-     有就登录，没有就跳过。跳过之后，有Controller中的shiro注解进行再次拦截，比如@RequiresAuthentication，这样控制权限访问。
-     * @author Jiang Zhihang
-     * @date 2022/2/4 23:58
-     */
-    @Bean
-    public ShiroFilterChainDefinition shiroFilterChainDefinition() {
-        DefaultShiroFilterChainDefinition chainDefinition = new DefaultShiroFilterChainDefinition();
-        chainDefinition.addPathDefinition("/**", "jwt");
-        chainDefinition.addPathDefinition("/static/**", "anon");
-        return chainDefinition;
-    }
-
-    /**
-     * @description: shiro工厂bean，设置安全管理员和jwt过滤器
-     * @author Jiang Zhihang
-     * @date 2022/2/4 23:59
-     */
-    @Bean("shiroFilterFactoryBean")
-    public ShiroFilterFactoryBean shiroFilterFactoryBean(org.apache.shiro.mgt.SecurityManager securityManager,
-                                                         ShiroFilterChainDefinition shiroFilterChainDefinition) {
-        ShiroFilterFactoryBean shiroBean = new ShiroFilterFactoryBean();
-        shiroBean.setSecurityManager(securityManager);
-
-        Map<String, javax.servlet.Filter> filters = new HashMap<>();
-        filters.put("jwt", jwtFilter);
-        shiroBean.setFilters(filters);
-        Map<String, String> filterChainMap = shiroFilterChainDefinition.getFilterChainMap();
-        shiroBean.setFilterChainDefinitionMap(filterChainMap);
-
-        return shiroBean;
-    }
-}
+/*
+Navicat MySQL Data Transfer
+
+Source Server         : 本地数据库
+Source Server Version : 80028
+Source Host           : localhost:3306
+Source Database       : community_market
+
+Target Server Type    : MYSQL
+Target Server Version : 80028
+File Encoding         : 65001
+
+Date: 2022-03-25 11:11:14
+*/
+
+SET FOREIGN_KEY_CHECKS=0;
+
+-- ----------------------------
+-- Table structure for system_permission
+-- ----------------------------
+DROP TABLE IF EXISTS `system_permission`;
+CREATE TABLE `system_permission` (
+  `id` bigint NOT NULL,
+  `name` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '权限名称',
+  `description` varchar(256) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '权限介绍',
+  `create_time` datetime NOT NULL,
+  `update_time` datetime DEFAULT NULL,
+  `del_flag` tinyint(1) NOT NULL DEFAULT '0' COMMENT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `t_system_permission_id_uindex` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='权限';
+
+-- ----------------------------
+-- Records of system_permission
+-- ----------------------------
+INSERT INTO `system_permission` VALUES ('1506480475219300352', 'index', '首页', '2022-03-23 11:58:29', '2022-03-23 11:58:29', '0');
+INSERT INTO `system_permission` VALUES ('1506480475231883264', 'modifyUser', '修改用户信息', '2022-03-23 11:58:29', '2022-03-23 11:58:29', '0');
+
+-- ----------------------------
+-- Table structure for system_role
+-- ----------------------------
+DROP TABLE IF EXISTS `system_role`;
+CREATE TABLE `system_role` (
+  `id` bigint NOT NULL,
+  `name` varchar(64) COLLATE utf8mb4_general_ci NOT NULL COMMENT '角色名称',
+  `description` varchar(256) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '角色介绍',
+  `create_time` datetime NOT NULL,
+  `update_time` datetime DEFAULT NULL,
+  `del_flag` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `t_user_role_id_uindex` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户角色';
+
+-- ----------------------------
+-- Records of system_role
+-- ----------------------------
+INSERT INTO `system_role` VALUES ('1506480475194134528', 'admin', '超级管理员', '2022-03-23 11:58:29', '2022-03-23 11:58:29', '0');
+INSERT INTO `system_role` VALUES ('1506480475206717440', 'normal', '普通用户', '2022-03-23 11:58:29', '2022-03-23 11:58:29', '0');
+
+-- ----------------------------
+-- Table structure for system_role_permission
+-- ----------------------------
+DROP TABLE IF EXISTS `system_role_permission`;
+CREATE TABLE `system_role_permission` (
+  `id` bigint NOT NULL,
+  `role_id` bigint NOT NULL COMMENT '角色ID',
+  `permission_id` bigint NOT NULL COMMENT '权限ID',
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  `del_flag` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `t_system_role_permission_rel_id_uindex` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='角色权限关联表';
+
+-- ----------------------------
+-- Records of system_role_permission
+-- ----------------------------
+INSERT INTO `system_role_permission` VALUES ('1506480475315769344', '1506480475194134528', '1506480475219300352', '2022-03-23 11:58:29', '2022-03-23 11:58:29', '0');
+INSERT INTO `system_role_permission` VALUES ('1506480475328352256', '1506480475194134528', '1506480475231883264', '2022-03-23 11:58:29', '2022-03-23 11:58:29', '0');
+INSERT INTO `system_role_permission` VALUES ('1506480475340935168', '1506480475206717440', '1506480475219300352', '2022-03-23 11:58:29', '2022-03-23 11:58:29', '0');
+
+-- ----------------------------
+-- Table structure for system_user
+-- ----------------------------
+DROP TABLE IF EXISTS `system_user`;
+CREATE TABLE `system_user` (
+  `id` bigint NOT NULL,
+  `nickname` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '昵称',
+  `username` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '用户名',
+  `password` varchar(512) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '密码',
+  `email` varchar(512) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '邮箱',
+  `phone` varchar(11) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '手机号',
+  `gender` varchar(64) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '性别 male/female',
+  `description` varchar(512) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '用户简介',
+  `avatar` varchar(512) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '头像',
+  `salt` varchar(256) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT '盐',
+  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime DEFAULT NULL,
+  `del_flag` tinyint(1) NOT NULL DEFAULT '0',
+  `status` int NOT NULL DEFAULT '0' COMMENT '用户状态 0:正常 1:暂时冻结',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `t_user_pk` (`username`),
+  UNIQUE KEY `t_user_pk_2` (`email`),
+  UNIQUE KEY `t_user_pk_4` (`phone`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户表';
+
+-- ----------------------------
+-- Records of system_user
+-- ----------------------------
+INSERT INTO `system_user` VALUES ('1506476260283518976', null, 'admin', '870a89140c96275e063dec545692926b', null, null, null, null, null, '5AmQ/67mDGqJgw9fcXzCkQ==', '2022-03-23 11:41:44', '2022-03-23 11:41:44', '0', '0');
+
+-- ----------------------------
+-- Table structure for system_user_role
+-- ----------------------------
+DROP TABLE IF EXISTS `system_user_role`;
+CREATE TABLE `system_user_role` (
+  `id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
+  `role_id` bigint NOT NULL,
+  `create_time` datetime NOT NULL,
+  `update_time` datetime DEFAULT NULL,
+  `del_flag` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `t_user_role_id_uindex` (`id`),
+  KEY `t_user_role_user_id_role_id_index` (`user_id`,`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户权限关联表';
+
+-- ----------------------------
+-- Records of system_user_role
+-- ----------------------------
+INSERT INTO `system_user_role` VALUES ('150647626028451949', '1506476260283518976', '1506480475194134528', '2022-03-23 13:04:17', '2022-03-23 13:04:20', '0');
 
 ```
-
-### 新建跨域请求配置类
-
-```java
-/**
- * @version 1.0
- * @description 跨域请求配置
- * @Author Jiang Zhihang
- * @Date 2022/2/5 0:33
- */
-@Configuration
-public class CorsConfig implements WebMvcConfigurer {
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")
-                .allowedOrigins("*")
-                .allowedMethods("GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowCredentials(true)
-                .maxAge(3600)
-                .allowedHeaders("*");
-    }
-}
-```
-
-### 新建全局Restful风格型返回数据
-
-```java
-/**
- * @version 1.0
- * @description 前后端交互数据
- * @Author Jiang Zhihang
- * @Date 2022/2/4 22:02
- */
-@Data
-public class RestfulResponse implements Serializable {
-    private int code;
-    private String message;
-    private Object data;
-
-    public static RestfulResponse response(int code, String message, Object data) {
-        RestfulResponse response = new RestfulResponse();
-        response.setCode(code);
-        response.setMessage(message);
-        response.setData(data);
-        return response;
-    }
-
-    public static RestfulResponse success(Object data) {
-        return response(200, "操作成功", data);
-    }
-
-    public static RestfulResponse success() {
-        return response(200, "操作成功", null);
-    }
-
-    public static RestfulResponse fail(int code, String message) {
-        return response(code, message, null);
-    }
-}
-```
-
-### 新建全局异常处理类
-
-全局处理异常，方便异常消息的捕获和向前端反馈信息。
-
-```java
-/**
- * @version 1.0
- * @description
- * @Author Jiang Zhihang
- * @Date 2022/2/4 22:01
- */
-@Slf4j
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-    @ExceptionHandler(ShiroException.class)
-    public RestfulResponse handler(ShiroException e) {
-        log.error("身份验证异常: {}", e.getMessage());
-        return RestfulResponse.fail(401, e.getMessage());
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public RestfulResponse handler(MethodArgumentNotValidException e) {
-        List<ObjectError> allErrors = e.getBindingResult().getAllErrors();
-        StringBuilder sb = new StringBuilder();
-        for (ObjectError error : allErrors) {
-            sb.append(error).append("&");
-        }
-        log.error("实体校验异常: {}", e.getMessage());
-        return RestfulResponse.fail(400, sb.toString());
-    }
-
-    @ExceptionHandler(RuntimeException.class)
-    public RestfulResponse handler(RuntimeException e) {
-        log.error("运行时异常: {}", e.getMessage());
-        return RestfulResponse.fail(400, e.getMessage());
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public RestfulResponse handler(IllegalArgumentException e) {
-        log.error("Assert异常: {}", e.getMessage());
-        return RestfulResponse.fail(400, e.getMessage());
-    }
-}
-```
-
-### 新建前端登录表单类
-
-```java
-/**
- * @version 1.0
- * @description 前端表单类
- * @Author Jiang Zhihang
- * @Date 2022/2/5 20:43
- */
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-@ToString
-public class LoginDto implements Serializable {
-    @NotBlank(message = "请输入注册的邮箱")
-    @Email(message = "邮箱格式错误")
-    private String email;
-    @NotBlank(message = "密码不能为空")
-    private String password;
-}
-```
-
-### 新建User控制器
-
-注：
