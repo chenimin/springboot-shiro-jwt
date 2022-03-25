@@ -1,2 +1,2 @@
-# springboot-shiro-jtw
+# springboot-shiro-jwt
 a springboot project 
