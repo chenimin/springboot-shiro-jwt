@@ -1,0 +1,28 @@
+spring:
+  profiles:
+    active: local
+  application:
+    name: community-market
+server:
+  port: 8083
+
+auth:
+  jwt:
+    secret: 39c9906167c14bd88acf62faab167595
+    expire: 43200  #12小时
+
+mybatis-plus:
+  mapper-locations: classpath:/mapping/*Mapper.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    auto-mapping-behavior: full
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-value: true
+      logic-not-delete-value: false
+      logic-delete-field: delFlag
+logging:
+  level:
+    com.aoizz.communitymarket.mapper: debug
+    com.aoizz.communitymarket.service: debug
